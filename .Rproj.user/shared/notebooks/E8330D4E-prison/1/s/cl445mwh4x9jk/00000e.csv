@@ -1,0 +1,6 @@
+"0","res <- data.frame(arima.fit$residuals)"
+"0","ggplot(res, aes(x = arima.fit.residuals)) +"
+"0","  geom_histogram(col = ""white"") +"
+"0","  labs(x = ""Arima Fitted Residuals"","
+"0","       y = ""Count"", "
+"0","       caption = ""Figure 8. Histogram of the residuals outputted from the final model"")"

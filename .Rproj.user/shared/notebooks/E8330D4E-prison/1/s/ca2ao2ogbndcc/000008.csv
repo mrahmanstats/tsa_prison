@@ -1,0 +1,7 @@
+"0","res.acf <- ggAcf(arima.fit$residuals, 132) +"
+"0","  ggtitle(label = ""Arima Residuals ACF"")"
+"0","res.pacf <- ggPacf(arima.fit$residuals, 132) +"
+"0","  ggtitle(label = ""Arima Residuals PACF"") + "
+"0","  labs(caption = ""Figure 6. ACF (Upper) and PACF (Lower) plots of the Final Arima Model Residuals are shown above. 95 percent CI are represented by the blue dashed lines."")  + "
+"0","  theme(plot.caption = element_text(hjust = 0, face= ""italic""))"
+"0","gridExtra::grid.arrange(res.acf, res.pacf)"

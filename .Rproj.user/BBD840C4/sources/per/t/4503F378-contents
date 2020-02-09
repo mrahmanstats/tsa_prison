@@ -1,0 +1,280 @@
+---
+title: "NYS Prison Admissions Time Series Analysis"
+author: "Mohammed Rahman"
+date: "January 1, 2020"
+output: html_document
+---
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tseries)
+library(TSA)
+library(data.table)
+library(tidyverse)
+library(gtsummary)
+library(lubridate)
+library(zoo)
+library(knitr)
+library(gt)
+library(ggthemr)
+library(forecast)
+library(sjPlot)
+```
+
+# Background 
+
+Criminal activity and its repercussions in New York are a very important topic that must be discussed in order to better understand the situation. Life changes for individuals that have family or friends in state prison and can be a very difficult time. The person in prison may have been someone who financially supported the family and so the burden falls on the individual. 
+	
+Criminals who commit the most serious crimes go to prison under the New York State Department of Corrections and Community Supervision. The agencies duty is to warrant the custody of criminals sentenced to state prison. This agency employs approximately 30,000 workers and houses approximately 54,000 offenders in 54 correctional facilities. There are currently approximately 36,000 parolees under Community Supervision. 
+
+# Exploratory Data Analysis & Purpose
+
+Data on Prison Admissions is collected and updated monthly. The dataset titled “Prison Admissions Beginning 2008” is hosted by the State of New York. The state has an open data platform found in data.ny.gov and they update their information according to the amount of data that is brought in. This dataset includes information about admission type, county, gender, age, and crime in New York State.
+
+Results when exploring the data showed that the most frequent crimes are assault, burglary, robbery, possession of a weapon, criminal sale of a controlled substance, and murder. The ages of prisoners range from 16 – 100 with the median and mean age at admission being 32 and 34 respectively. 93% of all prisoners admitted were male. The lowest number of monthly prison admissions occurred on September of 2018 with 1314 prison admissions. The highest number of monthly prison admissions occurred on March of 2008 with 2464 prison admissions.
+
+Each row of the original data has a record of an individual and their prison admission information. Using the statistical software R, this dataset was transformed into a time series object. The content of this new data is 132 rows of monthly prison admissions in New York State ranging from January of 2008 to December of 2018. Since prison admissions is a very serious and heavy topic, it is very important to not only model and understand the data but also forecast in order to plan for resources. Therefore 10 data points were left out for forecasting purposes.
+
+
+```{r}
+prison <- fread("prison.csv")
+prison <- prison[,2:4]
+gt(head(prison))
+
+```
+
+
+```{r}
+prison <- prison %>% mutate(month = case_when(
+  Admission.Month == "JANUARY" ~ 1,
+  Admission.Month == "FEBRUARY" ~ 2,
+  Admission.Month == "MARCH" ~ 3,
+  Admission.Month == "APRIL" ~ 4,
+  Admission.Month == "MAY" ~ 5,
+  Admission.Month == "JUNE" ~ 6,
+  Admission.Month == "JULY" ~ 7,
+  Admission.Month == "AUGUST" ~ 8,
+  Admission.Month == "SEPTEMBER" ~ 9,
+  Admission.Month == "OCTOBER" ~ 10,
+  Admission.Month == "NOVEMBER" ~ 11,
+  Admission.Month == "DECEMBER" ~ 12
+))
+
+prison <- prison %>% mutate(date = paste0(Admission.Year, "-", month, "-1"))
+prison$date <- as.Date(prison$date)
+d <- prison %>% select(date, V1, Admission.Month) %>% rename("prison_admissions" = V1, "month" = Admission.Month)
+p <- prison %>% select(date, V1)
+p <- p %>% rename("prison_admissions" = V1)
+
+gt(head(p))
+pris.ts <- ts(p$prison_admissions, start = c(2008,1), frequency = 12)
+```
+
+\
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggthemr("fresh")
+```
+
+```{r}
+ggplot(data = p, aes(x = date, y = prison_admissions)) +
+  geom_line(size = 1) +
+  geom_point(size = 3, col = "white") +
+  geom_point(size = 2) +
+  labs(x = "Date",
+       y = "Prison Admissions", 
+       caption = "Figure 1. Time series line plot of the number of prison admissions monthly from 2008 to 2018") +
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+```
+
+```{r, fig.width=11.5}
+pris.acf <- ggAcf(p$prison_admissions, 132) +
+  ggtitle(label = "Prison Admissions ACF")
+
+pris.pacf <- ggPacf(p$prison_admissions, 132) +
+  ggtitle(label = "Prison Admissions PACF") + 
+  labs(caption = "Figure 2. ACF (Upper) and PACF (Lower) plots of the original data are shown above. 95 percent confidence intervals are represented by the blue dashed lines.")  + 
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+
+gridExtra::grid.arrange(pris.acf, pris.pacf)
+```
+
+
+# Preliminary Analyses
+
+One key aspect of analyzing a time series is identifying trends and seasonal patterns. A linear model was fit on this data in order to see if this model will capture the variability of prison admissions and checking for any trends that can arise.
+
+```{r}
+ggplot(data = p, aes(x = date, y = prison_admissions)) +
+  geom_line(size = 1) +
+  geom_point(size = 3, col = "white") +
+  geom_point(size = 2) + 
+  geom_smooth(se = F, method = "lm", col = 'seagreen3', size = 2) +
+  labs(x = "Date",
+       y = "Prison Admissions",
+       caption = "Figure 3. Fitted Linear Regression Line on Prison Admission Time Series") +
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+```
+
+```{r}
+a <- lm(data = p, prison_admissions ~ date)
+tab_model(a)
+```
+
+\
+While the linear model shown in Figure 3 on its own was not a strong model for predicting the number of prison admissions, it did a good job in capturing the general trend of the data. With the negative coefficient of the time variable, it is appropriate to suggest that the number of monthly prison admissions is steadily decreasing through the years.
+
+```{r, fig.width=11}
+d$month <- factor(d$month, levels = d$month[1:12])
+ggplot(data = d, aes(y = prison_admissions, x = month)) + 
+  stat_boxplot(geom ='errorbar', col = "black", width= 0.3) +
+  geom_boxplot() +
+  labs(x = "Month",
+       y = "Prison Admissions",
+       title = "Monthly NYS Prison Admissions from 2008 to 2018",
+       caption = "Figure 4. Boxplot of Monthly Prison Admissions from 2008 to 2018") +
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+```
+
+
+Seasonality is defined as a characteristic of a time series in which the data experiences regular and predictable changes that recur every calendar year. Any predictable fluctuation or pattern that recurs or repeats over a one-year period is said to be seasonal. Figure 4 shows that in this prison admissions dataset there seems to be some seasonality present as there is a slight pattern over the months. 
+
+Taking the previous analyses into consideration the data illustrates in having both a trend, seasonality and strong autocorrelation as seen by Figures 2, 3 and 4. These aspects of the time series need to be adjusted for in order to have a stationary series. A time series is said to be stationary if the mean value of time-series is constant over time, meaning that, the trend is removed. A stationary time series also has variance that does not increase over time. Also, the seasonality effect should be very small, and after all the adjustments should look like a time series with only random white noise.
+
+In order to achieve stationarity a seasonal difference was performed in order to remove the seasonal component of the time series. Following this, a non-seasonal difference was applied to remove trends and autocorrelation. Using the Augmented Dickey-Fuller Test which tests for stationarity, this transformed time series had a p-value of 0.01, suggesting it rejects the null hypothesis of being non-stationary. The plot displaying this series with essentially only random white noise which will be used for further analysis in the ARIMA models is depicted by figure 5. 
+
+```{r message=FALSE, warning=FALSE}
+diff_1 <- diff(pris.ts, 12)
+diff_2 <- diff(diff_1, 1)
+adf.test(diff_2)
+```
+
+```{r, fig.width = 10}
+autoplot(diff_2, size = 1) +
+  labs(y = "Lagged Prison Admissions",
+       title = "Lagged Prison Admissions",
+       caption = "Figure 5. A stationary time series plot is shown above reflecting the number of prison admissions spanning from 2008 – 2018") +  
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+```
+
+```{r, fig.width=11.5}
+diff.acf <- ggAcf(diff_2, 120) +
+  ggtitle(label = "Prison Admissions ACF")
+
+diff.pacf <- ggPacf(diff_2, 120) +
+  ggtitle(label = "Prison Admissions PACF") + 
+  labs(caption = "Figure 6. ACF (Upper) and PACF (Lower) plots of the differenced data are shown above. 95 percent confidence intervals are represented by the blue dashed lines.")  + 
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+
+gridExtra::grid.arrange(diff.acf, diff.pacf)
+```
+
+# Model Fitting
+
+The statistical modeling technique that will be used to model this time series is a seasonal ARIMA. It stands for AutoRegressive Integrated Moving Average and is a statistical method that incorporates many features into one. Parameters of the ARIMA model are (p,d,q) and (P,D,Q) where p is the non-seasonal autoregressive component, d is the non-seasonal differencing involved and q is the moving average component. The capital letters represent the same idea as their lowercase letter but for the seasonal component. Since this data was differenced once, both seasonally and non-seasonally, d and D were fixed at 1. The values of the other parameters were tuned for by a function and the criteria used in order to choose the best values was the AIC. The Akaike information criterion is an estimator of the relative quality of statistical models for a given set of data. As seen by table 1, the values that outputted the lowest AIC value and thus the final model was when both p and P are equal to 2 and q and Q are equal to 3.
+
+```{r}
+model_fit_df <- tibble("(p,d,q)(P,D,Q)" = "AIC",
+                           "(1,1,1)(2,1,1)" = 1341.52,
+                           "(2,1,1)(2,1,1)" = 1339.32,
+                           "(2,1,2)(2,1,1)" = 1339.02,
+                           "(2,1,3)(2,1,1)" = 1342.53,
+                           "(2,1,3)(2,1,3)" = 1335.36)
+kable(model_fit_df)
+```
+
+# Model Diagnostics
+```{r, fig.width=10}
+arima.fit <- arima(pris.ts,
+                   order = c(2,1,3),
+                   seasonal = list(order = c(2,1,3)))
+
+autoplot(arima.fit$residuals, size = 1) +
+  labs(y = "Residuals",
+       caption = "Figure 6. Time Series plot of Arima Fitted Residuals",
+       Title = "Fitted Residuals Time Series") + 
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+  
+```
+
+```{r, fig.width=11}
+res.acf <- ggAcf(arima.fit$residuals, 132) +
+  ggtitle(label = "Arima Residuals ACF")
+
+res.pacf <- ggPacf(arima.fit$residuals, 132) +
+  ggtitle(label = "Arima Residuals PACF") + 
+  labs(caption = "Figure 7. ACF (Upper) and PACF (Lower) plots of the Final Arima Model Residuals are shown above. 95 percent CI are represented by the blue dashed lines.")  + 
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+
+gridExtra::grid.arrange(res.acf, res.pacf)
+```
+
+The time series plot of the residuals in Figure 6 shows that the final model was a good fit for this data. This is supported by the fact that the residuals center around 0 and have a constant variance throughout. This is further supported by the ACF and PACF plots which show the residuals (for the most part) are below the 95 percent confidence interval bands. Looking at the histogram displayed in Figure 8, it resembles the normal bell-shaped curve with some wide tails toward the right. This is also another indication of this model being a good fit, but the tails suggest further preliminary analyses could have been made. The test used for time series data for residual analysis is the Box-Ljung Test. It is defined as “a type of statistical test of whether any of a group of autocorrelations of a time series are different from zero. Instead of testing randomness at each distinct lag, it tests the "overall" randomness based on a number of lags.” When performing this test in R, all the lagged p-values were above the 0.05 level of significance suggesting again that this final model was a good fit for the time series data. 
+
+```{r message=FALSE, warning=FALSE}
+res <- data.frame(arima.fit$residuals)
+ggplot(res, aes(x = arima.fit.residuals)) +
+  geom_histogram(col = "white") +
+  labs(x = "Arima Fitted Residuals",
+       y = "Count", 
+       caption = "Figure 8. Histogram of the residuals outputted from the final model") +
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+```
+
+# Forecasting Results
+
+Future planning for prison admissions is a very important matter because the department will need to efficiently plan resources for the incoming prison inmates. The ARIMA model not only allows for understanding the prison admissions data but also allows for forecasting future prison inmate admissions. This forecasting method is also another way in assessing whether the final model chosen is indeed a good fit. 
+
+The plot shown in Figure 9 shows ten forecasted points along with the 90 and 95 percent confidence intervals. This is more clearly depicted in table 2 where predicted values are shown next to the actual values. The model essentially proved again to be a good fit since all the actual number of prison inmates were within the upper and lower limit of 95 percent confidence intervals.
+
+The root mean squared error of the forecast was 113.89. This essentially suggests that on average the difference between the predicted number of prison admissions and actual number of prison admissions was around 114 prisoners. From a modeling perspective this is a good number but incorrectly predicting over 100 prisoners every month is quite a large number and can lead to future issues.
+
+
+```{r message=FALSE, warning=FALSE, fig.width=10}
+train <- ts(pris.ts[1:122], start = c(2008, 1), frequency = 12)
+test <- pris.ts[123:132]
+
+fc.fit <- stats::arima(train,
+                   order = c(2,1,3),
+                   seasonal = list(order = c(2,1,3)))
+
+fc <- forecast(fc.fit, h=10)
+autoplot(fc) + scale_x_continuous(breaks = 2008:2019) +
+  labs(x = "Date",
+       y = "Prison Admissions", 
+       title = "Prison Admissions Forecast",
+       caption = "Figure 9. Forecasted prison admissions time series") +
+  theme(plot.caption = element_text(hjust = 0, face= "italic"))
+
+
+
+```
+
+# Conclusions
+
+Criminal activity is a very serious issue in New York State and has very serious repercussions. They lead to prison incarcerations in which individuals spend years depending on the severity of their crimes. Since the prison systems house around 54,000 inmates it is important to assess whether the number of prison admissions are going up or down and plan accordingly. The data used for this analysis captures data from 2008 to 2018 but gives enough information for understanding certain trends. 
+
+From the preliminary analysis it was pointed out that there is a definite negative trend for the number of prison admissions throughout the year. This is an indication that the NYS correctional system is either doing a better job in preventing serious crimes or are not admitting individuals into prison for other reasons which require further research. Another significant finding from the preliminary analysis is that there seems to be a seasonal pattern on when individuals are admitted into prison. The warmer months seems to have prison admissions as evident by the spike in March as seen by figure 4. This is important to note as it can help the department plan accordingly and expect more prisoners during this time.
+
+After transforming the train data into a stationary time series by seasonal and non-seasonal differencing, a statistical ARIMA model was fit onto the data to achieve a more approximate explanation of the variability of the number of monthly prison admissions. This model was chosen by the AIC which is a model choosing criteria. The normality of the residuals as seen by the histogram also suggested that this model seemed like a good fit for explaining the number of monthly prison admissions in NYS. 
+
+Finally, the model was used to forecast the next ten data points and was appropriate as the actual values were with in the upper- and lower-95 percent limits. The model approximately captured the negative trend of prison admissions through the years and the seasonal pattern that is associated with the data.
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+

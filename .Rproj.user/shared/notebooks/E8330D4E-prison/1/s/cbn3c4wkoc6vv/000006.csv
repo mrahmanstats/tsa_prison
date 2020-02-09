@@ -1,0 +1,3 @@
+"0","prison <- fread(""prison.csv"")"
+"0","prison <- prison[,2:4]"
+"0","gt(head(prison))"

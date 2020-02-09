@@ -1,0 +1,5 @@
+"0","autoplot(diff_2) +"
+"0","  labs(y = ""Lagged Prison Admissions"","
+"0","       title = ""Lagged Prison Admissions"","
+"0","       caption = ""Figure 5. A stationary time series plot is shown above reflecting the number of prison admissions spanning from 2008 – 2018"") +  "
+"0","  theme(plot.caption = element_text(hjust = 0, face= ""italic""))"
